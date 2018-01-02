@@ -5,7 +5,8 @@
 #include "ESP8266FtpServer.h"
 
 CWifiWebBase gWifiWebBase;
-FtpServer ftpSrv;
+//FtpServer ftpSrv;
+CFtpServer FtpServer;
 
 void setup() 
 {
@@ -44,7 +45,8 @@ void setup()
   gWifiWebBase.Setup();
 
   Serial.println("Initializing ftp");
-  ftpSrv.begin("dols","dols");
+  //ftpSrv.Begin("dols","dols");
+  FtpServer.Start();
 
   Serial.println("Initialisation Finished");
   Serial.println("=============================================");
@@ -53,7 +55,8 @@ void setup()
 void loop() 
 {
   gWifiWebBase.Loop();
-  ftpSrv.handleFTP();
+  //ftpSrv.HandleFTP();
+  FtpServer.Loop();
   delay(50);
 }
 
