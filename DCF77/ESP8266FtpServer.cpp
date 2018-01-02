@@ -5,7 +5,9 @@
 
 //Config defines
 #define FTP_DEBUG
-
+#define FTP_CONTROL_PORT        21
+#define FTP_DATA_PORT_START     20100
+#define FTP_DATA_PORT_END       20200
 
 //library includes
 #include <ESP8266WiFi.h>
@@ -26,8 +28,8 @@
 #endif
 
 CFtpServer::CFtpServer()
-  : mFtpServer( FTP_PORT_CONTROL )
-  , mFtpDataServer( FTP_PORT_DATA )
+  : mFtpServer( FTP_CONTROL_PORT )
+  , mLastDataPort(FTP_DATA_PORT_START)
 {
 }
 
@@ -44,7 +46,6 @@ void CFtpServer::Start()
   DBGLN("=============================================");
 #endif
   mFtpServer.begin();
-  mFtpDataServer.begin();
 }
 
 void CFtpServer::Loop()
@@ -84,27 +85,6 @@ void CFtpServer::Loop()
       CheckClient(mClientInfo[i]);
     }
   }
-
-  if (mFtpDataServer.hasClient())
-  {
-    WiFiClient C = mFtpDataServer.available();
-    if (!C.connected())
-      return;
-
-    IPAddress Lip = C.localIP();
-    IPAddress Rip = C.remoteIP();
-    uint16_t Lport = C.localPort();
-    uint16_t Rport = C.remotePort();
-    DBG("Local:");
-    DBG(C.localIP());
-    DBG(":");
-    DBG(Lport);
-    DBG("  ");
-    DBG(Rip);
-    DBG(":");
-    DBG(Rport);
-    DBGLN("");
-  }
 }
 
 bool CFtpServer::GetEmptyClientInfo(int32_t& Pos)
@@ -128,30 +108,73 @@ void CFtpServer::CheckClient(SClientInfo& Client)
   if (!Client.ClientConnection.connected())
     DisconnectClient(Client);
 
-  //Check Data Connection
-  
+  //Check for new Data Connection
+  if (Client.PasvListenServer && Client.PasvListenServer->hasClient())
+  {
+    Client.DataConnection = Client.PasvListenServer->available();
+    if (!Client.DataConnection.connected())
+      return;
+
+    IPAddress Lip = Client.DataConnection.localIP();
+    IPAddress Rip = Client.DataConnection.remoteIP();
+    uint16_t Lport = Client.DataConnection.localPort();
+    uint16_t Rport = Client.DataConnection.remotePort();
+    DBG("Local:");
+    DBG(Lip);
+    DBG(":");
+    DBG(Lport);
+    DBG("  ");
+    DBG(Rip);
+    DBG(":");
+    DBG(Rport);
+    DBGLN("");
+
+    CheckData(Client);
+  }
+
   //Check for new control data
   GetControlData(Client);
+}
+
+void CFtpServer::CheckData(SClientInfo& Client)
+{
+  DBGLN("Checkdata 1");
+  if (Client.PasvListenServer == NULL || !Client.DataConnection.connected())
+    return;
+
+  DBGLN("Checkdata 2");
+  switch (Client.TransferCommand)
+  {
+    case NTC_LIST:
+      DBGLN("Checkdata 3");
+      Process_Data_LIST(Client);
+      break;
+  }
+
+  DBGLN("Checkdata 4");
+  Client.DataConnection.stop();
+
+  Client.TransferCommand = NTC_NONE;
 }
 
 void CFtpServer::DisconnectClient(SClientInfo& Client)
 {
   if (Client.ClientConnection.connected())
-  {
     Client.ClientConnection.println("221 Goodbye");
-    Client.ClientConnection.flush();
-  }
-  Client.ClientConnection.stop();
+
   Client.Reset();
 }
 
 void CFtpServer::GetControlData(SClientInfo& Client)
 {
+  //DBGLN("GetControlData 1");
   while(1)
   {
     int32_t NextChr = Client.ClientConnection.read();
     if (NextChr < 0 || NextChr > 0xFF)
       break;
+
+    //DBGLN("GetControlData 2");
 
     //<CR> or <LF>
     if (NextChr == '\r' || NextChr == '\n')
@@ -194,6 +217,9 @@ void CFtpServer::GetControlData(SClientInfo& Client)
     if (Client.ControlState == NFS_ARGUMENTS)
       Client.Arguments += (char) NextChr;      
   }
+
+  //DBGLN("GetControlData 10");
+
 }
 
 String CFtpServer::GetFirstArgument(SClientInfo& Client)
@@ -287,6 +313,30 @@ bool CFtpServer::GetParentDir(String FilePath, String& ParentDir)
   return true;
 }
 
+int32_t CFtpServer::GetNextDataPort()
+{
+  int32_t NewPort = mLastDataPort;
+  while (1)
+  {
+    NewPort++;
+    if (NewPort >= FTP_DATA_PORT_END)
+      NewPort = FTP_DATA_PORT_START;
+
+    bool PortInUse = false;
+    for (int32_t i=0; i<FTP_MAX_CLIENTS; i++)
+    {
+      if (mClientInfo[i].InUse && mClientInfo[i].PasvListenPort == NewPort)
+        PortInUse = true;
+    }
+
+    if (!PortInUse)
+      return NewPort;
+
+    if (NewPort == mLastDataPort) //all possible ports are in use
+     return 0;
+  }
+}
+
 void CFtpServer::ProcessCommand(SClientInfo& Client)
 {
   //preprocess
@@ -314,7 +364,7 @@ void CFtpServer::ProcessCommand(SClientInfo& Client)
   if (cmd.equalsIgnoreCase("TYPE") && Process_TYPE(Client)) return;
   if (cmd.equalsIgnoreCase("PASV") && Process_PASV(Client)) return;
   if (cmd.equalsIgnoreCase("PORT") && Process_PORT(Client)) return;
-  if (cmd.equalsIgnoreCase("LIST") && Process_LIST(Client)) return;
+  if (cmd.equalsIgnoreCase("LIST") && Process_DataCommand_Preprocess(Client, NTC_LIST)) return;
 
   Client.ClientConnection.printf( "500 Unknown command %s.\n\r", cmd.c_str());  
 }
@@ -458,27 +508,64 @@ bool CFtpServer::Process_TYPE(SClientInfo& Client)
 }
 
 bool CFtpServer::Process_PASV(SClientInfo& Client)
-{
+{  
   IPAddress LocalIP = Client.ClientConnection.localIP();
-  Client.ClientConnection.println( "227 Entering Passive Mode ("+ String(LocalIP[0]) + "," + String(LocalIP[1])+","+ String(LocalIP[2])+","+ String(LocalIP[3])+","+String( FTP_PORT_DATA >> 8 ) +","+String ( FTP_PORT_DATA & 255 )+").");
-
+  if (Client.PasvListenServer == NULL)
+  {
+    Client.PasvListenPort = GetNextDataPort();
+    Client.PasvListenServer = new WiFiServer(Client.PasvListenPort);
+    Client.PasvListenServer->begin();
+  }
+  
+  int32_t PasvPort = Client.PasvListenPort;
+  Client.ClientConnection.println( "227 Entering Passive Mode ("+ String(LocalIP[0]) + "," + String(LocalIP[1])+","+ String(LocalIP[2])+","+ String(LocalIP[3])+","+String( PasvPort >> 8 ) +","+String ( PasvPort & 255 )+").");
+  Client.TransferMode = NTC_PASSIVE;
   return true;
 }
 
 bool CFtpServer::Process_PORT(SClientInfo& Client)
 {
+  //Client.TransferMode = NTC_ACTIVE;
   return false;
 }
 
-bool CFtpServer::Process_LIST(SClientInfo& Client)
+bool CFtpServer::Process_DataCommand_Preprocess(SClientInfo& Client, nTransferCommand TransferCommand)
 {
-  return true;
-  Client.ClientConnection.println( "150 Accepted data connection.");
-  Client.ClientConnection.println( "226 0 matches total.");
-//125   Data connection already open; transfer starting.
-//"425 No data connection"
-//"550 Can't open directory " + String(mCwdName)
+  if (Client.TransferMode == NTM_UNKNOWN)
+  {
+    Client.ClientConnection.println( "425 Use PORT or PASV first.");
+    return true;
+  }
+  if (Client.TransferCommand != NTC_NONE)
+  {
+    Client.ClientConnection.println( "450 Requested file action not taken, already an command is in process.");
+    return true;
+  }
+
+  if (!Client.DataConnection.connected())
+  {
+    Client.ClientConnection.println( "150 Accepted data connection.");
+  }
+  else
+  {
+    Client.ClientConnection.println( "125 Data connection already open; transfer starting.");
+  }
+
+  Client.TransferCommand = TransferCommand;
+  CheckData(Client);
   return true;
 }
 
+bool CFtpServer::Process_Data_LIST(SClientInfo& Client)
+{
+  DBGLN("Process_Data_LIST 1");
+  Client.DataConnection.print( "+r,s 11");
+  Client.DataConnection.println( ",\tjoejaa.text");
+  Client.DataConnection.print( "+r,s 22");
+  Client.DataConnection.println( ",\tjoejaas.text");
+
+
+  Client.ClientConnection.println( "226 2 matches total.");
+  return true;
+}
 
