@@ -10,8 +10,8 @@
 struct SWifiClientInfoItem
 {
   bool enable;
-  char* ssid; // = "Fietswiel";
-  char* password; // = "power678";
+  const char* ssid; // = "Fietswiel";
+  const char* password; // = "power678";
   IPAddress ip; //(192, 168, 2, 150);
   IPAddress subnet; //(255, 255, 255, 0);
   IPAddress gateway; //(172, 168, 2, 254);
@@ -56,7 +56,6 @@ protected: //Borrowed from FSBrowser
 
 public: //Public variables
   static ESP8266WebServer mWebServer;
-  static ESP8266WebServer mWebServer2;
   SWifiClientInfoItem mWifiClientInfo[MAX_WIFI_CLIENT_INFO];
   SWifiClientInfoItem mWifiAPInfo;
  

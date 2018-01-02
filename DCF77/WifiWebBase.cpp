@@ -6,7 +6,6 @@
 extern CWifiWebBase gWifiWebBase;
 
 ESP8266WebServer CWifiWebBase::mWebServer(80);
-ESP8266WebServer CWifiWebBase::mWebServer2(8080);
 
 File CWifiWebBase::mUploadFile;
 
@@ -27,6 +26,14 @@ void CWifiWebBase::Setup()
       size_t fileSize = dir.fileSize();
       Serial.printf("FS File: %s, size: %d\n", fileName.c_str(), fileSize);
     }
+ 
+    Dir dir2 = SPIFFS.openDir("/wwwroot");
+    while (dir2.next()) 
+    {    
+      String fileName = dir2.fileName();
+      size_t fileSize = dir2.fileSize();
+      Serial.printf("FS File: %s, size: %d\n", fileName.c_str(), fileSize);
+    }
 
   WiFi.enableSTA(true);
   WiFi.enableAP(false);
@@ -45,10 +52,8 @@ void CWifiWebBase::Setup()
   mWebServer.on("/edit", HTTP_POST, [](){ gWifiWebBase.mWebServer.send(200, "text/plain", ""); }, CWifiWebBase::handleFileUpload);
 
   mWebServer.onNotFound([](){if(!gWifiWebBase.handleFileRead(gWifiWebBase.mWebServer.uri()))gWifiWebBase.mWebServer.send(404, "text/plain", "FileNotFound");});
-  mWebServer2.onNotFound([](){gWifiWebBase.mWebServer2.send(404, "text/plain", "WebServer2");});
 
   mWebServer.begin();
-  mWebServer2.begin();
 }
 
 void CWifiWebBase::Loop()
@@ -60,7 +65,6 @@ void CWifiWebBase::Loop()
     LoopAP();
 
   mWebServer.handleClient();
-  mWebServer2.handleClient();
 }
 
 void CWifiWebBase::LoopClient()
