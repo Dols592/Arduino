@@ -1,16 +1,17 @@
 /*
 */
 
+//library includes
+#include <vector>
 #include "ESP8266FtpServer.h"
+#include <ESP8266WiFi.h>
+#include <FS.h>
 
 //Config defines
 #define FTP_DEBUG
 #define FTP_CONTROL_PORT        21
 #define FTP_DATA_PORT_START     20100
 #define FTP_DATA_PORT_END       20200
-
-//library includes
-#include <ESP8266WiFi.h>
 
 //debug
 #undef DBG
@@ -138,22 +139,23 @@ void CFtpServer::CheckClient(SClientInfo& Client)
 
 void CFtpServer::CheckData(SClientInfo& Client)
 {
-  DBGLN("Checkdata 1");
   if (Client.PasvListenServer == NULL || !Client.DataConnection.connected())
     return;
 
-  DBGLN("Checkdata 2");
   switch (Client.TransferCommand)
   {
     case NTC_LIST:
-      DBGLN("Checkdata 3");
       Process_Data_LIST(Client);
+      break;
+
+    default:
+      return;
       break;
   }
 
-  DBGLN("Checkdata 4");
+  DBGLN("Data send. Closing data connection.");
+  Client.DataConnection.flush();
   Client.DataConnection.stop();
-
   Client.TransferCommand = NTC_NONE;
 }
 
@@ -167,14 +169,11 @@ void CFtpServer::DisconnectClient(SClientInfo& Client)
 
 void CFtpServer::GetControlData(SClientInfo& Client)
 {
-  //DBGLN("GetControlData 1");
   while(1)
   {
     int32_t NextChr = Client.ClientConnection.read();
     if (NextChr < 0 || NextChr > 0xFF)
       break;
-
-    //DBGLN("GetControlData 2");
 
     //<CR> or <LF>
     if (NextChr == '\r' || NextChr == '\n')
@@ -183,6 +182,7 @@ void CFtpServer::GetControlData(SClientInfo& Client)
         continue;
 
       ProcessCommand(Client);
+      Client.Arguments = "";
       Client.ControlState = NCS_START;
       continue;
     }
@@ -217,9 +217,6 @@ void CFtpServer::GetControlData(SClientInfo& Client)
     if (Client.ControlState == NFS_ARGUMENTS)
       Client.Arguments += (char) NextChr;      
   }
-
-  //DBGLN("GetControlData 10");
-
 }
 
 String CFtpServer::GetFirstArgument(SClientInfo& Client)
@@ -344,10 +341,16 @@ void CFtpServer::ProcessCommand(SClientInfo& Client)
   Client.Arguments.trim();
   const String& cmd(Client.Command); //for easy access
 
+  DBG("Command: ");
+  DBG(cmd.c_str());
+  DBG(" ");
+  DBGLN(Client.Arguments.c_str());
+
   if (cmd.equalsIgnoreCase("USER") && Process_USER(Client)) return;
   if (cmd.equalsIgnoreCase("PASS") && Process_PASS(Client)) return;
   if (Client.FtpState < NFS_WAITFORCOMMAND)
   {
+    DBG("Command Refused. Not logged in.");
     Client.ClientConnection.println( "530 Login needed.");
     return;
   }
@@ -357,16 +360,17 @@ void CFtpServer::ProcessCommand(SClientInfo& Client)
   if (cmd.equalsIgnoreCase("FEAT") && Process_FEAT(Client)) return;
   if (cmd.equalsIgnoreCase("HELP") && Process_HELP(Client)) return;
   if (cmd.equalsIgnoreCase("PWD") && Process_PWD(Client)) return;
-  if (cmd.equalsIgnoreCase("CDUP") && Process_PWD(Client)) return;
-  if (cmd.equalsIgnoreCase("CWD") && Process_PWD(Client)) return;
-  if (cmd.equalsIgnoreCase("MKD") && Process_PWD(Client)) return;
-  if (cmd.equalsIgnoreCase("RMD") && Process_PWD(Client)) return;
+  if (cmd.equalsIgnoreCase("CDUP") && Process_CDUP(Client)) return;
+  if (cmd.equalsIgnoreCase("CWD") && Process_CWD(Client)) return;
+  if (cmd.equalsIgnoreCase("MKD") && Process_MKD(Client)) return;
+  if (cmd.equalsIgnoreCase("RMD") && Process_RMD(Client)) return;
   if (cmd.equalsIgnoreCase("TYPE") && Process_TYPE(Client)) return;
   if (cmd.equalsIgnoreCase("PASV") && Process_PASV(Client)) return;
   if (cmd.equalsIgnoreCase("PORT") && Process_PORT(Client)) return;
   if (cmd.equalsIgnoreCase("LIST") && Process_DataCommand_Preprocess(Client, NTC_LIST)) return;
 
-  Client.ClientConnection.printf( "500 Unknown command %s.\n\r", cmd.c_str());  
+  Client.ClientConnection.println( "Command not known.");
+  Client.ClientConnection.printf( "500 Unknown command %s.\n\r", cmd.c_str());
 }
 
 bool CFtpServer::Process_USER(SClientInfo& Client)
@@ -472,25 +476,34 @@ bool CFtpServer::Process_CDUP(SClientInfo& Client)
   return true;
 }
 
+//Because directories are simulated, we accept CWD to 
+//dir that does not "exists".
 bool CFtpServer::Process_CWD(SClientInfo& Client)
 {
-  String NewPath = GetFirstArgument(Client);
-
-  //check if path exist
+  String NewPath = ConstructPath(Client);
   
   Client.CurrentPath = NewPath;
   Client.ClientConnection.printf( "250 Directory successfully changed.\r\n");  
+  DBGLN("New Directory: " + NewPath);
   return true;
 }
 
 bool CFtpServer::Process_MKD(SClientInfo& Client)
 {
-  return false;
+  String NewPath = ConstructPath(Client);
+
+  Client.ClientConnection.printf( "257 \"%s\" is created.\n\r", NewPath.c_str());
+
+  return true;
 }
 
+//we never accept directory removal. If all
+//files are removed, directorie is removed automatically
 bool CFtpServer::Process_RMD(SClientInfo& Client)
 {
-  return false;
+  Client.ClientConnection.println( "550 Directories can not be removed. It is removed automatically when it's empty.");
+
+  return true;
 }
 
 bool CFtpServer::Process_TYPE(SClientInfo& Client)
@@ -558,14 +571,50 @@ bool CFtpServer::Process_DataCommand_Preprocess(SClientInfo& Client, nTransferCo
 
 bool CFtpServer::Process_Data_LIST(SClientInfo& Client)
 {
-  DBGLN("Process_Data_LIST 1");
-  Client.DataConnection.print( "+r,s 11");
-  Client.DataConnection.println( ",\tjoejaa.text");
-  Client.DataConnection.print( "+r,s 22");
-  Client.DataConnection.println( ",\tjoejaas.text");
+  DBGLN("Sending filelist.");
+
+  Dir dir = SPIFFS.openDir(Client.CurrentPath);
+  String FileName;
+  String FilePath;
+  bool IsDir;
+  std::vector<String> DirList;
+  while (dir.next()) 
+  {    
+    String FilePath = dir.fileName();
+    if (GetFileName(Client.CurrentPath, FilePath, FileName, IsDir))
+    {
+      if (IsDir)
+      {
+        //check if listing is already been processed
+        bool Found(false);
+        for (std::vector<String>::iterator it=DirList.begin(); it!=DirList.end(); it++)
+        {
+          if (FileName.equals(*it))
+            Found = true;
+        }
+        if (!Found)
+        {
+          Client.DataConnection.print("drw-rw-rw-    1 0        0               0 Jan 01  1970 ");
+          Client.DataConnection.println(FileName);
+          DirList.push_back(FileName);
+        }
+      }
+      else
+      {        
+        size_t fileSize = dir.fileSize();
+        Client.DataConnection.print("-rw-rw-rw-    1 0        0              22 Jan 01  1970 ");
+        Client.DataConnection.println(FileName);
+      }     
+    }
+  }
+
+////                                0        1         2         3         4         5          
+////                                12345678901234567890123456789012345678901234567890123456789
+//  Client.DataConnection.println( "-rw-rw-rw-    1 0        0              22 Jan 01  1970 1MB.zip");
+//  Client.DataConnection.println( "drw-rw-rw-    1 0        0               0 Jan 01  1970 SubDir");
 
 
-  Client.ClientConnection.println( "226 2 matches total.");
+  Client.ClientConnection.println( "226 File listing send.");
   return true;
 }
 
