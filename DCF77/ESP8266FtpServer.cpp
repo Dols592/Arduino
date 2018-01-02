@@ -43,10 +43,6 @@ void CFtpServer::Start()
   DBGF("ParentDir \"%s\"\r\n", ParentDir.c_str());
   DBGLN("=============================================");
 #endif
-#if(1)
-  bool    GetParentDir(String FilePath, String& ParentDir);
-
-#endif
   mFtpServer.begin();
   mFtpDataServer.begin();
 }
@@ -479,6 +475,7 @@ bool CFtpServer::Process_LIST(SClientInfo& Client)
   return true;
   Client.ClientConnection.println( "150 Accepted data connection.");
   Client.ClientConnection.println( "226 0 matches total.");
+//125   Data connection already open; transfer starting.
 //"425 No data connection"
 //"550 Can't open directory " + String(mCwdName)
   return true;
