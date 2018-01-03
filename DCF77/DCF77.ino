@@ -2,11 +2,11 @@
  */
 #include "SoftConfig.h"
 #include "WifiWebBase.h"
-#include "ESP8266FtpServer.h"
+#include <DFC_ESP8266FtpServer.h>
 
 CWifiWebBase gWifiWebBase;
 //FtpServer ftpSrv;
-CFtpServer FtpServer;
+DFC_ESP7266FTPServer FtpServer;
 
 void setup() 
 {
