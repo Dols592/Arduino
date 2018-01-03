@@ -6,7 +6,7 @@
 
 CWifiWebBase gWifiWebBase;
 //FtpServer ftpSrv;
-DFC_ESP7266FTPServer FtpServer;
+DFC_ESP7266FtpServer FtpServer;
 
 void setup() 
 {
