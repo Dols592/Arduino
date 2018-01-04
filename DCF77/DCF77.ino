@@ -23,6 +23,17 @@ void setup()
   else
     Serial.println("Mounted");
 
+  FSInfo fs_info;
+  SPIFFS.info(fs_info);
+  Serial.printf("   TotalBytes: %d\r\n", fs_info.totalBytes);
+  Serial.printf("    usedBytes: %d\r\n", fs_info.usedBytes);
+  Serial.printf("    blockSize: %d\r\n", fs_info.blockSize);
+  Serial.printf("     pageSize: %d\r\n", fs_info.pageSize);
+  Serial.printf(" maxOpenFiles: %d\r\n", fs_info.maxOpenFiles);
+  Serial.printf("maxPathLength: %d\r\n", fs_info.maxPathLength);
+
+    
+
   gWifiWebBase.mWifiAPInfo.enable = true;
   gWifiWebBase.mWifiAPInfo.ssid = "DcfClock";
   gWifiWebBase.mWifiAPInfo.ip = IPAddress(192, 168, 1, 1);
