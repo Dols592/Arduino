@@ -32,8 +32,7 @@ void setup()
   Serial.printf(" maxOpenFiles: %d\r\n", fs_info.maxOpenFiles);
   Serial.printf("maxPathLength: %d\r\n", fs_info.maxPathLength);
 
-    
-
+ 
   gWifiWebBase.mWifiAPInfo.enable = true;
   gWifiWebBase.mWifiAPInfo.ssid = "DcfClock";
   gWifiWebBase.mWifiAPInfo.ip = IPAddress(192, 168, 1, 1);
@@ -57,7 +56,7 @@ void setup()
 
   Serial.println("Initializing ftp");
   //ftpSrv.Begin("dols","dols");
-  FtpServer.Start();
+  FtpServer.Init();
 
   Serial.println("Initialisation Finished");
   Serial.println("=============================================");
