@@ -5,7 +5,9 @@
 
 extern CWifiWebBase gWifiWebBase;
 
-ESP8266WebServer CWifiWebBase::mWebServer(80);
+#ifdef WIFI_USE_WEB_SERVER
+  ESP8266WebServer CWifiWebBase::mWebServer(80);
+#endif
 
 File CWifiWebBase::mUploadFile;
 
@@ -40,6 +42,7 @@ void CWifiWebBase::Setup()
   WiFi.setAutoConnect(false); //this setting is persistant and not immediat.
   WiFi.disconnect(); //disconnect if there was a autoconnect started
 
+#ifdef WIFI_USE_WEB_SERVER
   //SERVER INIT
   mWebServer.on("/list", HTTP_GET, CWifiWebBase::handleFileList);
   mWebServer.on("/edit", HTTP_GET, []()
@@ -54,6 +57,7 @@ void CWifiWebBase::Setup()
   mWebServer.onNotFound([](){if(!gWifiWebBase.handleFileRead(gWifiWebBase.mWebServer.uri()))gWifiWebBase.mWebServer.send(404, "text/plain", "FileNotFound");});
 
   mWebServer.begin();
+#endif
 }
 
 void CWifiWebBase::Loop()
@@ -63,8 +67,10 @@ void CWifiWebBase::Loop()
     LoopClient();
   if (WifiMode == WIFI_AP || WifiMode == WIFI_AP_STA)
     LoopAP();
-
+    
+#ifdef WIFI_USE_WEB_SERVER
   mWebServer.handleClient();
+#endif
 }
 
 void CWifiWebBase::LoopClient()
@@ -171,6 +177,7 @@ void CWifiWebBase::DisableAP()
 //holds the current upload
 //File fsUploadFile;
 
+#ifdef WIFI_USE_WEB_SERVER
 
 String CWifiWebBase::getContentType(String filename)
 {
@@ -308,6 +315,8 @@ void CWifiWebBase::handleFileList()
   output += "]";
   mWebServer.send(200, "text/json", output);
 }
+
+#endif
 /*
 void setup(void)
 {

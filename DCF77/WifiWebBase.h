@@ -7,6 +7,8 @@
 #define MAX_WIFI_CLIENT_INFO  10
 #define MAX_WIFI_CLIENT_RETRIES 3
 
+//#define WIFI_USE_WEB_SERVER
+
 struct SWifiClientInfoItem
 {
   bool enable;
@@ -55,7 +57,9 @@ protected: //Borrowed from FSBrowser
   static void handleFileList();
 
 public: //Public variables
+#ifdef WIFI_USE_WEB_SERVER
   static ESP8266WebServer mWebServer;
+#endif
   SWifiClientInfoItem mWifiClientInfo[MAX_WIFI_CLIENT_INFO];
   SWifiClientInfoItem mWifiAPInfo;
  
