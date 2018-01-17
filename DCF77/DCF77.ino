@@ -1,17 +1,21 @@
+
+
 /*
 */
 
 #include "SoftConfig.h"
 #include "WifiWebBase.h"
+#include "DcfDisplay.h"
 #include <DFC_ESP8266FtpServer.h>
 #include <DFC_ESP8266EasyWebServer.h>
+#include <DLog.h>
 
 CWifiWebBase gWifiWebBase;
-//FtpServer ftpSrv;
 DFC_ESP8266FtpServer FtpServer;
 DFC_ESP8266EasyWebServer WebServer;
+DcfDisplay Display;
 
-void setup()  
+void setup()
 {
   delay(1000); //Wait until esp is ready. Without some libraries don't work well. (eg. dhcp in wifi ap)
   Serial.begin(74880); //equals as default esp
@@ -63,16 +67,22 @@ void setup()
   Serial.println("Initializing web");
   WebServer.Init();
 
+  Serial.println("Initializing Display");
+  Display.Init();
+
+  DLog::AddCallback(DcfDisplay::AddLogString);
   Serial.println("Initialisation Finished");
   Serial.println("=============================================");
+
 }
 
 void loop()
 {
   gWifiWebBase.Loop();
-  //ftpSrv.HandleFTP();
   FtpServer.Loop();
   WebServer.Loop();
+  
+  Display.Loop();  
 }
 
 
